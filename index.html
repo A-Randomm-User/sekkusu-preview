@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>4K 音游 | 双押 + 自动提速</title>
+  <title>4K Practice</title>
   <style>
     body {
       margin: 0;
@@ -54,14 +54,14 @@
   </style>
 </head>
 <body>
-  <h1>4K 下落式音游（双押+自动提速）</h1>
-  <button onclick="startGame()">开始游戏</button>
+  <h1>4K Practice</h1>
+  <button onclick="startGame()">Start</button>
   <div id="scoreboard">
-    得分: <span id="score">0</span> |
-    失误: <span id="miss">0</span> |
-    当前速度: <span id="speed">5</span>
+    Score: <span id="score">0</span> |
+    Lost: <span id="miss">0</span> |
+    Speed: <span id="speed">5</span>
   </div>
-  <div id="info">按键：D F J K 或点击对应Lane<br>10分后开启双押模式</div>
+  <div id="info">Keys: D F J K</div>
   <div id="game">
     <div class="lane" data-key="D"></div>
     <div class="lane" data-key="F"></div>
@@ -89,16 +89,12 @@
     // 按下的按键，用于双押判定
     let keysPressed = new Set();
 
-    // 点击判定暂存
-    let lanesClicked = new Set();
-
     function startGame() {
       score = 0;
       miss = 0;
       fallSpeed = 5;
       notes = [];
       keysPressed.clear();
-      lanesClicked.clear();
       updateScore();
       clearInterval(gameInterval);
       document.querySelectorAll('.note').forEach(n => n.remove());
@@ -184,50 +180,53 @@
       }
     });
 
-    // 点击判定
+    // 点击判定（单点判定，兼容双押模式）
     lanes.forEach(lane => {
-      lane.addEventListener('mousedown', () => {
+      lane.addEventListener('click', () => {
         const key = lane.dataset.key;
-        lanesClicked.add(key);
-        tryCheckHit();
-      });
-      lane.addEventListener('mouseup', () => {
-        const key = lane.dataset.key;
-        lanesClicked.delete(key);
-      });
-      lane.addEventListener('mouseleave', () => {
-        const key = lane.dataset.key;
-        lanesClicked.delete(key);
+
+        // 找到当前判定区内该lane的音符
+        const notesInRange = notes.filter(note => {
+          const top = parseFloat(note.style.top);
+          return note.dataset.key === key && Math.abs(top - hitLine) <= hitWindow;
+        });
+
+        if (notesInRange.length > 0) {
+          // 单个音符点击判定，不管双押模式
+          notesInRange[0].remove();
+          notes.splice(notes.indexOf(notesInRange[0]), 1);
+
+          // 点击得分每个音符+1，键盘双押才+2
+          score += 1;
+          updateScore();
+        } else {
+          // 点击空白或判定失败
+          miss++;
+          updateScore();
+        }
       });
     });
 
-    // 尝试判定击中（键盘或点击）
+    // 尝试判定击中（键盘双押判定）
     function tryCheckHit() {
       if (score > 10) {
-        // 双押判定: keysPressed 或 lanesClicked 至少两个符合判定
-        // 需要同时击中两个不同lane的音符
+        // 双押判定: 需要同时按下两个不同lane的音符
         const hitKeys = new Set();
 
-        // 收集当前判定范围内所有音符的key
+        // 当前判定区所有音符
         const notesInRange = notes.filter(note => {
           const top = parseFloat(note.style.top);
           return Math.abs(top - hitLine) <= hitWindow;
         });
 
-        // 从按下的键和点击集合里筛选出符合判定范围的音符key
         keysPressed.forEach(k => {
-          if (notesInRange.some(n => n.dataset.key === k)) {
-            hitKeys.add(k);
-          }
-        });
-        lanesClicked.forEach(k => {
           if (notesInRange.some(n => n.dataset.key === k)) {
             hitKeys.add(k);
           }
         });
 
         if (hitKeys.size >= 2) {
-          // 同时有两个及以上音符被按下/点击，得分+2，移除对应音符
+          // 移除两个对应音符
           let removedCount = 0;
           for (let i = notes.length - 1; i >= 0 && removedCount < 2; i--) {
             const note = notes[i];
@@ -240,30 +239,23 @@
           if (removedCount === 2) {
             score += 2;
             updateScore();
-            // 清除对应按键和点击，避免重复判定
-            hitKeys.forEach(k => {
-              keysPressed.delete(k);
-              lanesClicked.delete(k);
-            });
+            hitKeys.forEach(k => keysPressed.delete(k));
           } else {
-            // 如果没有完全匹配两音符，算失误
             miss++;
             updateScore();
           }
         } else if (hitKeys.size === 1) {
-          // 只击中了一个音符，双押模式算失误
+          // 只击中一个音符算失误
           miss++;
           updateScore();
         }
       } else {
-        // 单押模式
-        // 找到判定范围内对应按键或点击的音符并击中
+        // 单押模式判定
         const notesInRange = notes.filter(note => {
           const top = parseFloat(note.style.top);
           return Math.abs(top - hitLine) <= hitWindow;
         });
 
-        // 优先键盘判定
         for (let k of keysPressed) {
           let idx = notesInRange.findIndex(n => n.dataset.key === k);
           if (idx !== -1) {
@@ -276,22 +268,6 @@
             return;
           }
         }
-
-        // 再判定点击
-        for (let k of lanesClicked) {
-          let idx = notesInRange.findIndex(n => n.dataset.key === k);
-          if (idx !== -1) {
-            let note = notesInRange[idx];
-            note.remove();
-            notes.splice(notes.indexOf(note), 1);
-            score++;
-            updateScore();
-            lanesClicked.delete(k);
-            return;
-          }
-        }
-
-        // 没击中视为失误（这个失误通常在松开时不会触发，因为tryCheckHit只在down/mousedown调用）
       }
     }
   </script>
