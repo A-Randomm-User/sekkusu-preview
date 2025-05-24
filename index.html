@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>4K Practice</title>
+  <title>4K 音游 | 分段自动提速版</title>
   <style>
     body {
       margin: 0;
@@ -10,7 +10,6 @@
       color: white;
       font-family: sans-serif;
       text-align: center;
-      user-select: none;
     }
     #game {
       position: relative;
@@ -46,22 +45,16 @@
     #scoreboard {
       margin-top: 10px;
     }
-    #info {
-      margin-top: 6px;
-      font-size: 14px;
-      color: #ccc;
-    }
   </style>
 </head>
 <body>
-  <h1>4K Practice</h1>
-  <button onclick="startGame()">Start</button>
+  <h1>4K 下落式音游（每50分提速，最高10）</h1>
+  <button onclick="startGame()">开始游戏</button>
   <div id="scoreboard">
-    Score: <span id="score">0</span> |
-    Lost: <span id="miss">0</span> |
-    Speed: <span id="speed">5</span>
+    得分: <span id="score">0</span> |
+    失误: <span id="miss">0</span> |
+    当前速度: <span id="speed">5</span>
   </div>
-  <div id="info">Keys: D F J K</div>
   <div id="game">
     <div class="lane" data-key="D"></div>
     <div class="lane" data-key="F"></div>
@@ -86,15 +79,11 @@
     let gameInterval;
     let fallSpeed = 5;
 
-    // 按下的按键，用于双押判定
-    let keysPressed = new Set();
-
     function startGame() {
       score = 0;
       miss = 0;
       fallSpeed = 5;
       notes = [];
-      keysPressed.clear();
       updateScore();
       clearInterval(gameInterval);
       document.querySelectorAll('.note').forEach(n => n.remove());
@@ -102,35 +91,19 @@
       gameInterval = setInterval(gameLoop, 16);
     }
 
-    // 生成音符，单押或双押
     function spawnNote() {
-      if (score > 10) {
-        // 双押模式：生成两个不同lane的音符
-        let lanesChosen = [];
-        while (lanesChosen.length < 2) {
-          let idx = Math.floor(Math.random() * 4);
-          if (!lanesChosen.includes(idx)) lanesChosen.push(idx);
-        }
-        lanesChosen.forEach(i => {
-          createNoteInLane(i);
-        });
-      } else {
-        // 单押模式：生成一个音符
-        let idx = Math.floor(Math.random() * 4);
-        createNoteInLane(idx);
-      }
-      const nextDelay = 500 + Math.random() * 800;
-      setTimeout(spawnNote, nextDelay);
-    }
-
-    function createNoteInLane(i) {
-      const lane = lanes[i];
+      const keyIndex = Math.floor(Math.random() * 4);
+      const lane = lanes[keyIndex];
       const note = document.createElement('div');
       note.classList.add('note');
-      note.dataset.key = keys[i];
+      note.dataset.key = keys[keyIndex];
       note.style.top = '-20px';
+
       lane.appendChild(note);
       notes.push(note);
+
+      const nextDelay = 500 + Math.random() * 800;
+      setTimeout(spawnNote, nextDelay);
     }
 
     function gameLoop() {
@@ -141,7 +114,6 @@
         note.style.top = top + 'px';
 
         if (top > hitLine + hitWindow) {
-          // 超出判定区未击中
           miss++;
           updateScore();
           note.remove();
@@ -155,121 +127,50 @@
       scoreEl.textContent = score;
       missEl.textContent = miss;
 
-      // 每50分加速1，初始5，最高50
+      // 计算当前速度等级，每50分提速1，基础速度2，最高10
       let speedLevel = Math.floor(score / 50);
-      fallSpeed = Math.min(5 + speedLevel, 50);
+      fallSpeed = Math.min(5 + speedLevel, 10);
+
       speedEl.textContent = fallSpeed;
     }
 
-    // 按键按下事件
     document.addEventListener('keydown', (e) => {
       const key = e.key.toUpperCase();
       if (!keys.includes(key)) return;
 
-      if (!keysPressed.has(key)) {
-        keysPressed.add(key);
-        tryCheckHit();
+      for (let i = 0; i < notes.length; i++) {
+        const note = notes[i];
+        const top = parseFloat(note.style.top);
+        if (note.dataset.key === key && Math.abs(top - hitLine) <= hitWindow) {
+          score++;
+          updateScore();
+          note.remove();
+          notes.splice(i, 1);
+          return;
+        }
       }
+      miss++;
+      updateScore();
     });
 
-    // 按键松开事件，清除状态
-    document.addEventListener('keyup', (e) => {
-      const key = e.key.toUpperCase();
-      if (keysPressed.has(key)) {
-        keysPressed.delete(key);
-      }
-    });
-
-    // 点击判定（单点判定，兼容双押模式）
     lanes.forEach(lane => {
       lane.addEventListener('click', () => {
         const key = lane.dataset.key;
-
-        // 找到当前判定区内该lane的音符
-        const notesInRange = notes.filter(note => {
+        for (let i = 0; i < notes.length; i++) {
+          const note = notes[i];
           const top = parseFloat(note.style.top);
-          return note.dataset.key === key && Math.abs(top - hitLine) <= hitWindow;
-        });
-
-        if (notesInRange.length > 0) {
-          // 单个音符点击判定，不管双押模式
-          notesInRange[0].remove();
-          notes.splice(notes.indexOf(notesInRange[0]), 1);
-
-          // 点击得分每个音符+1，键盘双押才+2
-          score += 1;
-          updateScore();
-        } else {
-          // 点击空白或判定失败
-          miss++;
-          updateScore();
-        }
-      });
-    });
-
-    // 尝试判定击中（键盘双押判定）
-    function tryCheckHit() {
-      if (score > 10) {
-        // 双押判定: 需要同时按下两个不同lane的音符
-        const hitKeys = new Set();
-
-        // 当前判定区所有音符
-        const notesInRange = notes.filter(note => {
-          const top = parseFloat(note.style.top);
-          return Math.abs(top - hitLine) <= hitWindow;
-        });
-
-        keysPressed.forEach(k => {
-          if (notesInRange.some(n => n.dataset.key === k)) {
-            hitKeys.add(k);
-          }
-        });
-
-        if (hitKeys.size >= 2) {
-          // 移除两个对应音符
-          let removedCount = 0;
-          for (let i = notes.length - 1; i >= 0 && removedCount < 2; i--) {
-            const note = notes[i];
-            if (hitKeys.has(note.dataset.key) && Math.abs(parseFloat(note.style.top) - hitLine) <= hitWindow) {
-              note.remove();
-              notes.splice(i, 1);
-              removedCount++;
-            }
-          }
-          if (removedCount === 2) {
-            score += 2;
-            updateScore();
-            hitKeys.forEach(k => keysPressed.delete(k));
-          } else {
-            miss++;
-            updateScore();
-          }
-        } else if (hitKeys.size === 1) {
-          // 只击中一个音符算失误
-          miss++;
-          updateScore();
-        }
-      } else {
-        // 单押模式判定
-        const notesInRange = notes.filter(note => {
-          const top = parseFloat(note.style.top);
-          return Math.abs(top - hitLine) <= hitWindow;
-        });
-
-        for (let k of keysPressed) {
-          let idx = notesInRange.findIndex(n => n.dataset.key === k);
-          if (idx !== -1) {
-            let note = notesInRange[idx];
-            note.remove();
-            notes.splice(notes.indexOf(note), 1);
+          if (note.dataset.key === key && Math.abs(top - hitLine) <= hitWindow) {
             score++;
             updateScore();
-            keysPressed.delete(k);
+            note.remove();
+            notes.splice(i, 1);
             return;
           }
         }
-      }
-    }
+        miss++;
+        updateScore();
+      });
+    });
   </script>
 </body>
 </html>
